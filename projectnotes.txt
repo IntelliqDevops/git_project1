@@ -1,0 +1,124 @@
+pipeline
+{
+    agent any
+    stages
+    {
+        stage('Download java code')
+        {
+            steps
+            {
+                git 'https://github.com/intelliqittrainings/maven.git'
+            }
+        }
+        stage('Build the code')
+        {
+            steps
+            {
+                sh 'mvn package'
+            }
+        }
+        stage('Build docker image')
+        {
+            steps
+            {
+                sh 'cp webapp/target/webapp.war .'
+                
+                sh '''cat >dockerfile<<EOF
+FROM tomee
+COPY webapp.war /usr/local/tomee/webapps/myapp.war
+EOF'''
+
+sh 'docker build -t intelliqit/myapp .'
+                
+            }
+        }
+        stage('Push image to docker hub')
+        {
+            steps
+            {
+                sh 'docker push intelliqit/myapp'
+            }
+        }
+        stage('Deploy it as a container on qaservers using ansible')
+        {
+            steps
+            {
+                sh 'ssh ubuntu@172.31.27.236 ansible-playbook  /home/ubuntu/myapp.yml -b'
+            }
+        }
+        stage('Download selenium scripts and run them')
+        {
+            steps
+            {
+                git 'https://github.com/intelliqittrainings/FunctionalTesting.git'
+                sh 'java -jar /var/lib/jenkins/workspace/EndtoEndProject/testing.jar'
+            }
+        }
+        stage('Deploy into kubernetes cluster')
+        {
+            steps
+            {
+                sh 'ssh ec2-user@172.31.26.17 kubectl apply -f /home/ec2-user/myapp.yml '
+            }
+        }
+        
+    }
+}
+
+
+
+=========================================================
+---
+- name: Create our app as container on all qaservers
+  hosts: all
+  tasks:
+    - name: Create docker containers
+      docker_container:
+        name: myapp
+        image: intelliqit/myapp
+        ports:
+          - 8080:8080
+...
+
+=============================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-deployment
+  labels:
+    author: intelliqit
+    type: project
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      type: project
+  template:
+    metadata:
+      name: myapp-pod
+      labels:
+        type: project
+
+    spec:
+      containers:
+        - name: myapp
+          image: intelliqit/myapp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+  labels:
+    author: intelliqit
+spec:
+  type: NodePort
+  ports:
+    - targetPort: 8080
+      port: 8080
+      nodePort: 30008
+  selector:
+    type: project
+...
+
+========================================================

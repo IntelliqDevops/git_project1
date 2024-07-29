@@ -1,0 +1,244 @@
+Dockerfile for voting app
+=========================================================================
+
+# Define a base stage that uses the official python runtime base image
+FROM python:3.11-slim AS base
+
+# Add curl for healthcheck
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set the application directory
+WORKDIR /usr/local/app
+
+# Install our requirements.txt
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Define a stage specifically for development, where it'll watch for
+# filesystem changes
+FROM base AS dev
+RUN pip install watchdog
+ENV FLASK_ENV=development
+CMD ["python", "app.py"]
+
+# Define the final stage that will bundle the application for production
+FROM base AS final
+
+# Copy our code from the current folder to the working directory inside the container
+COPY . .
+
+# Make port 80 available for links and/or publish
+EXPOSE 80
+
+# Define our command to be run when launching the container
+CMD ["gunicorn", "app:app", "-b", "0.0.0.0:80", "--log-file", "-", "--access-logfile", "-", "--workers", "4", "--keep-alive", "0"]
+
+
+
+
+Base Stage
+dockerfile
+Copy code
+# Define a base stage that uses the official python runtime base image
+FROM python:3.11-slim AS base
+FROM python:3.11-slim AS base: This line sets the base image for the Dockerfile. It uses the official Python 3.11 slim image. Using a slim image helps to keep the container lightweight.
+
+
+RUN apt-get update && ...: This block installs curl in the container. It first updates the package list, installs curl without recommended extra packages, and then removes the apt cache to reduce the image size.
+dockerfile
+
+WORKDIR /usr/local/app: Sets the working directory inside the container to /usr/local/app. Any subsequent commands will be run in this directory.
+
+COPY requirements.txt ./requirements.txt: Copies the requirements.txt file from your host machine to the working directory inside the container.
+RUN pip install --no-cache-dir -r requirements.txt: Installs the Python dependencies listed in requirements.txt without using the pip cache to save space.
+
+
+
+FROM base AS dev: Starts a new stage named dev that builds on top of the base stage.
+RUN pip install watchdog: Installs watchdog, which is useful for monitoring filesystem changes during development.
+ENV FLASK_ENV=development: Sets an environment variable FLASK_ENV to development, which can be used by your application to enable development-specific settings.
+CMD ["python", "app.py"]: Sets the command to run the application using python app.py when the container is started in development mode.
+Production Stage
+dockerfile
+Copy code
+# Define the final stage that will bundle the application for production
+FROM base AS final
+
+# Copy our code from the current folder to the working directory inside the container
+COPY . .
+FROM base AS final: Starts a new stage named final that builds on top of the base stage.
+COPY . .: Copies all the files from your host machine's current directory to the working directory inside the container.
+dockerfile
+Copy code
+# Make port 80 available for links and/or publish
+EXPOSE 80
+EXPOSE 80: Informs Docker that the container will listen on port 80 at runtime. This does not publish the port but serves as documentation for the user.
+dockerfile
+Copy code
+# Define our command to be run when launching the container
+CMD ["gunicorn", "app:app", "-b", "0.0.0.0:80", "--log-file", "-", "--access-logfile", "-", "--workers", "4", "--keep-alive", "0"]
+CMD ["gunicorn", "app
+", ...]: Sets the command to run the application using gunicorn in production. gunicorn is a Python WSGI HTTP server for UNIX. The options used are:
+app:app: Refers to the WSGI application callable object.
+-b 0.0.0.0:80: Binds the server to all IP addresses on port 80.
+--log-file - and --access-logfile -: Logs to stdout.
+--workers 4: Uses 4 worker processes.
+--keep-alive 0: Disables keep-alive connections.
+In summary, this Dockerfile sets up a multi-stage build for a Python application, with a base stage that installs dependencies, a development stage that enables file change monitoring, and a production stage that configures the application to run with gunicorn.
+
+
+
+======================================================================================================
+Dockerfile for nodejs image
+=============================
+
+FROM node:18-slim
+
+# add curl for healthcheck
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl tini && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/local/app
+
+# have nodemon available for local dev use (file watching)
+RUN npm install -g nodemon
+
+COPY package*.json ./
+
+RUN npm ci && \
+ npm cache clean --force && \
+ mv /usr/local/app/node_modules /node_modules
+
+COPY . .
+
+ENV PORT 80
+EXPOSE 80
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "server.js"]
+
+
+
+
+Base Image
+dockerfile
+Copy code
+FROM node:18-slim
+FROM node:18-slim: This line sets the base image to the official Node.js 18 slim image. The slim version is lighter and more efficient.
+Installing Dependencies
+dockerfile
+Copy code
+# add curl for healthcheck
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl tini && \
+    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && ...: This block updates the package list and installs curl and tini.
+curl: A command-line tool for transferring data with URLs, useful for health checks.
+tini: A tiny but valid init for containers that ensures proper process handling.
+rm -rf /var/lib/apt/lists/*: Removes the package list to reduce the image size.
+Setting the Working Directory
+dockerfile
+Copy code
+WORKDIR /usr/local/app
+WORKDIR /usr/local/app: Sets the working directory inside the container to /usr/local/app. All subsequent commands will be run in this directory.
+Installing Nodemon
+dockerfile
+Copy code
+# have nodemon available for local dev use (file watching)
+RUN npm install -g nodemon
+RUN npm install -g nodemon: Installs nodemon globally. nodemon is a tool that helps develop Node.js-based applications by automatically restarting the application when file changes are detected.
+Copying and Installing Application Dependencies
+dockerfile
+Copy code
+COPY package*.json ./
+
+RUN npm ci && \
+ npm cache clean --force && \
+ mv /usr/local/app/node_modules /node_modules
+*COPY package.json ./**: Copies the package.json and package-lock.json files from your host machine to the working directory inside the container.
+RUN npm ci && ...: Installs the Node.js dependencies listed in package-lock.json using npm ci (clean install) for faster and more consistent builds.
+npm cache clean --force: Clears the npm cache to reduce the image size.
+mv /usr/local/app/node_modules /node_modules: Moves the node_modules directory to the root to handle potential volume mounting issues during development.
+Copying the Application Code
+dockerfile
+Copy code
+COPY . .
+COPY . .: Copies all the files from your host machine's current directory to the working directory inside the container.
+Setting Environment Variables and Exposing Ports
+dockerfile
+Copy code
+ENV PORT 80
+EXPOSE 80
+ENV PORT 80: Sets an environment variable PORT to 80. This is the port the application will run on inside the container.
+EXPOSE 80: Informs Docker that the container will listen on port 80 at runtime. This does not publish the port but serves as documentation for the user.
+Entry Point and Command
+dockerfile
+Copy code
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "server.js"]
+ENTRYPOINT ["/usr/bin/tini", "--"]: Uses tini as the init system to ensure proper process handling and clean signal handling.
+CMD ["node", "server.js"]: Sets the command to run the application using node server.js when the container starts.
+In summary, this Dockerfile sets up a Node.js environment with dependencies and tools necessary for development and production. It includes nodemon for development, tini for process handling, and configurations to ensure the application runs on port 80.
+==============================================================================================
+
+Dockerfile for .Netimage
+=============================
+FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:7.0 as build
+ARG TARGETPLATFORM
+ARG TARGETARCH
+ARG BUILDPLATFORM
+RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM"
+
+WORKDIR /source
+COPY *.csproj .
+RUN dotnet restore -a $TARGETARCH
+
+COPY . .
+RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore
+
+# app image
+FROM mcr.microsoft.com/dotnet/runtime:7.0
+WORKDIR /app
+COPY --from=build /app .
+ENTRYPOINT ["dotnet", "Worker.dll"]
+
+
+
+FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:7.0 as build: This line sets the base image for the build stage to the .NET SDK 7.0 image from Microsoft's container registry. The --platform=${BUILDPLATFORM} directive ensures that the build runs on the specified build platform.
+ARG TARGETPLATFORM, TARGETARCH, BUILDPLATFORM: These arguments allow you to pass build-time variables. TARGETPLATFORM is the target platform for the build, TARGETARCH is the target architecture, and BUILDPLATFORM is the platform on which the build is running.
+RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM": This line prints a message to the build output showing the current build platform and target platform.
+
+WORKDIR /source: Sets the working directory to /source.
+COPY *.csproj .: Copies the project file(s) (with extension .csproj) from the host to the container's working directory.
+RUN dotnet restore -a $TARGETARCH: Runs the dotnet restore command, which restores the project dependencies for the specified target architecture ($TARGETARCH).\
+
+
+COPY . .: Copies all the files from the current directory on the host to the working directory inside the container.
+RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore: Runs the dotnet publish command, which compiles the application and publishes the resulting files to the /app directory. The -c release flag specifies the release configuration, -a $TARGETARCH targets the specified architecture, --self-contained false indicates that the app is not self-contained, and --no-restore skips the restore step because it was already done.
+
+FROM mcr.microsoft.com/dotnet/runtime:7.0: This line sets the base image for the runtime stage to the .NET runtime 7.0 image from Microsoft's container registry.
+WORKDIR /app: Sets the working directory to /app.
+COPY --from=build /app .: Copies the published application files from the /app directory of the build stage to the working directory of the runtime stage.
+ENTRYPOINT ["dotnet", "Worker.dll"]: Sets the command to run the application using dotnet Worker.dll when the container starts. Worker.dll is the main assembly of your application.
+
+===============================================================================================
+
+triggers:
+ paths:
+  include:
+   - result/*
+
+
+
+
+
+
+
+pool:
+  name: 'azureagent'
+  This is the vm created on azure pipeline
+
+
